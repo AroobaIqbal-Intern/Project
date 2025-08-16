@@ -167,6 +167,34 @@
 .collapsed {
     display: none;
 }
+
+.source-content {
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    margin-top: 1rem;
+}
+
+.chunk-item {
+    background: white;
+    border: 1px solid #e9ecef;
+    border-radius: 6px;
+    padding: 0.75rem;
+    margin-bottom: 0.5rem;
+}
+
+.chunk-text {
+    font-family: 'Courier New', monospace;
+    font-size: 0.9rem;
+    line-height: 1.4;
+    color: #495057;
+}
+
+.chunk-phrases {
+    border-top: 1px solid #e9ecef;
+    padding-top: 0.5rem;
+    margin-top: 0.5rem;
+}
 </style>
 {% endblock %}
 
@@ -489,6 +517,11 @@ function sendChatbotMessage() {
         if (data.assistant_message) {
             addChatbotMessage(data.assistant_message.content, 'assistant');
             
+            // Show the source content used for the answer
+            if (data.highlighting_data && data.highlighting_data.length > 0) {
+                showSourceContent(data.highlighting_data);
+            }
+            
             // Highlight relevant content if available
             if (data.highlights_created) {
                 if (data.highlighting_data) {
@@ -544,6 +577,8 @@ function highlightRelevantContent(chunks) {
     let highlightedText = originalText;
     let highlightCount = 0;
     
+    console.log('Original text length:', originalText.length);
+    
     // Add new highlights
     chunks.forEach((chunk, index) => {
         let phrases = [];
@@ -557,15 +592,38 @@ function highlightRelevantContent(chunks) {
             phrases = extractKeyPhrases(chunk.content);
         }
         
+        console.log(`Chunk ${index} phrases:`, phrases);
+        
         phrases.forEach(phrase => {
-            if (phrase.length > 10 && highlightedText.includes(phrase)) {
-                // Create highlight span
-                const highlightSpan = `<span class="highlight" data-chunk="${chunk.chunk_id || chunk.id || index}" style="background-color: #FFD700; padding: 2px 4px; border-radius: 3px; margin: 0 2px; font-weight: bold; box-shadow: 0 1px 3px rgba(0,0,0,0.2); transition: all 0.3s ease;">${phrase}</span>`;
-                
-                // Replace the phrase with highlighted version
-                const regex = new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
-                highlightedText = highlightedText.replace(regex, highlightSpan);
-                highlightCount++;
+            if (phrase.length > 20) { // Only highlight meaningful phrases
+                // Try exact match first
+                if (highlightedText.includes(phrase)) {
+                    console.log('Exact match found:', phrase);
+                    const highlightSpan = createHighlightSpan(phrase, chunk, index);
+                    const regex = new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+                    highlightedText = highlightedText.replace(regex, highlightSpan);
+                    highlightCount++;
+                } else {
+                    // Try fuzzy matching for better results
+                    const fuzzyMatch = findFuzzyMatch(phrase, highlightedText);
+                    if (fuzzyMatch) {
+                        console.log('Fuzzy match found:', fuzzyMatch, 'for phrase:', phrase);
+                        const highlightSpan = createHighlightSpan(fuzzyMatch, chunk, index);
+                        const regex = new RegExp(fuzzyMatch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+                        highlightedText = highlightedText.replace(regex, highlightSpan);
+                        highlightCount++;
+                    } else {
+                        // Try to find the most similar text segment
+                        const similarMatch = findSimilarText(phrase, highlightedText);
+                        if (similarMatch) {
+                            console.log('Similar match found:', similarMatch, 'for phrase:', phrase);
+                            const highlightSpan = createHighlightSpan(similarMatch, chunk, index);
+                            const regex = new RegExp(similarMatch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+                            highlightedText = highlightedText.replace(regex, highlightSpan);
+                            highlightCount++;
+                        }
+                    }
+                }
             }
         });
     });
@@ -635,6 +693,158 @@ function extractKeyPhrases(text) {
     
     // Return unique phrases, sorted by length (longer phrases first)
     return [...new Set(phrases)].sort((a, b) => b.length - a.length).slice(0, 10);
+}
+
+function createHighlightSpan(phrase, chunk, index) {
+    // Create a unique ID for the highlight span
+    const highlightId = `highlight-${index}-${chunk.chunk_id || chunk.id || Date.now()}`;
+    
+    // Create the highlight span
+    const highlightSpan = `<span class="highlight" id="${highlightId}" data-chunk="${chunk.chunk_id || chunk.id || index}" style="background-color: #FFD700; padding: 2px 4px; border-radius: 3px; margin: 0 2px; font-weight: bold; box-shadow: 0 1px 3px rgba(0,0,0,0.2); transition: all 0.3s ease;">${phrase}</span>`;
+    
+    return highlightSpan;
+}
+
+function findFuzzyMatch(phrase, text) {
+    // Use a fuzzy matching library (e.g., levenshtein-distance)
+    // This is a simplified example. In a real application, you'd use a proper library.
+    const normalizedPhrase = phrase.toLowerCase();
+    const normalizedText = text.toLowerCase();
+    
+    // Find the closest match using a simple substring search
+    let bestMatch = null;
+    let minDistance = Infinity;
+    
+    // Iterate through sentences to find the closest match
+    const sentences = text.split(/[.!?]+/);
+    for (const sentence of sentences) {
+        if (sentence.length < 30) continue; // Skip very short sentences
+        
+        const sentenceLower = sentence.toLowerCase();
+        const distance = levenshteinDistance(normalizedPhrase, sentenceLower);
+        
+        if (distance < minDistance) {
+            minDistance = distance;
+            bestMatch = sentence.trim();
+        }
+    }
+    
+    // Return the best match if the distance is below a threshold (e.g., 30% of phrase length)
+    if (bestMatch && minDistance < phrase.length * 0.3) {
+        return bestMatch;
+    }
+    return null;
+}
+
+function levenshteinDistance(s1, s2) {
+    const len1 = s1.length;
+    const len2 = s2.length;
+    const matrix = Array(len1 + 1).fill(null).map(() => Array(len2 + 1).fill(0));
+
+    for (let i = 0; i <= len1; i++) {
+        matrix[i][0] = i;
+    }
+    for (let j = 0; j <= len2; j++) {
+        matrix[0][j] = j;
+    }
+
+    for (let i = 1; i <= len1; i++) {
+        for (let j = 1; j <= len2; j++) {
+            if (s1[i - 1] === s2[j - 1]) {
+                matrix[i][j] = matrix[i - 1][j - 1];
+            } else {
+                matrix[i][j] = Math.min(
+                    matrix[i - 1][j] + 1, // Deletion
+                    matrix[i][j - 1] + 1, // Insertion
+                    matrix[i - 1][j - 1] + 1 // Substitution
+                );
+            }
+        }
+    }
+    return matrix[len1][len2];
+}
+
+function findSimilarText(phrase, text) {
+    // Find text that is semantically similar to the phrase
+    const normalizedPhrase = normalizeText(phrase);
+    const normalizedText = normalizeText(text);
+    
+    // Look for text segments that contain key words from the phrase
+    const phraseWords = normalizedPhrase.split(' ').filter(w => w.length > 3);
+    
+    if (phraseWords.length < 2) return null;
+    
+    // Find text segments that contain most of the key words
+    const sentences = text.split(/[.!?]+/);
+    let bestMatch = null;
+    let bestScore = 0;
+    
+    for (const sentence of sentences) {
+        if (sentence.length < 30) continue;
+        
+        const sentenceLower = sentence.toLowerCase();
+        let score = 0;
+        
+        for (const word of phraseWords) {
+            if (sentenceLower.includes(word.toLowerCase())) {
+                score++;
+            }
+        }
+        
+        // Calculate similarity score
+        const similarity = score / phraseWords.length;
+        if (similarity > bestScore && similarity > 0.5) { // At least 50% word overlap
+            bestScore = similarity;
+            bestMatch = sentence.trim();
+        }
+    }
+    
+    return bestMatch;
+}
+
+function normalizeText(text) {
+    // Basic text normalization (e.g., remove punctuation, convert to lowercase)
+    return text.replace(/[.,!?]/g, '').toLowerCase();
+}
+
+function showSourceContent(highlightingData) {
+    // Create or update source content display
+    let sourceContentDiv = document.getElementById('sourceContent');
+    if (!sourceContentDiv) {
+        sourceContentDiv = document.createElement('div');
+        sourceContentDiv.id = 'sourceContent';
+        sourceContentDiv.className = 'source-content mt-3 p-3 bg-light border rounded';
+        sourceContentDiv.innerHTML = '<h6><i class="fas fa-info-circle"></i> Source Content Used:</h6>';
+        
+        // Insert after chatbot messages
+        const chatbotMessages = document.getElementById('chatbotMessages');
+        chatbotMessages.appendChild(sourceContentDiv);
+    }
+    
+    // Clear previous content
+    const contentList = sourceContentDiv.querySelector('.content-list');
+    if (contentList) {
+        contentList.remove();
+    }
+    
+    // Create content list
+    const contentListDiv = document.createElement('div');
+    contentListDiv.className = 'content-list mt-2';
+    
+    highlightingData.forEach((chunk, index) => {
+        const chunkDiv = document.createElement('div');
+        chunkDiv.className = 'chunk-item mb-2 p-2 bg-white border rounded';
+        chunkDiv.innerHTML = `
+            <small class="text-muted">Chunk ${index + 1}:</small>
+            <div class="chunk-text mt-1">${chunk.content.substring(0, 200)}...</div>
+            <div class="chunk-phrases mt-1">
+                <small class="text-info">Highlighted phrases: ${chunk.phrases ? chunk.phrases.slice(0, 3).join(', ') : 'None'}</small>
+            </div>
+        `;
+        contentListDiv.appendChild(chunkDiv);
+    });
+    
+    sourceContentDiv.appendChild(contentListDiv);
 }
 
 function showHighlightNotification(highlightCount) {
@@ -768,7 +978,7 @@ function extractReferences() {
     button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Extracting...';
     button.disabled = true;
     
-    fetch(`/api/papers/{{ paper.id }}/extract-references/`, {
+    fetch(`/api/papers/{{ paper.id }}/process-references/`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',

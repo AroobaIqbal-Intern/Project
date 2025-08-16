@@ -210,7 +210,7 @@ class PaperChatView(generics.GenericAPIView):
             print(f"Error creating highlights: {e}")
     
     def _prepare_highlighting_data(self, relevant_chunks):
-        """Prepare highlighting data for frontend."""
+        """Prepare highlighting data for frontend with improved highlighting."""
         highlighting_data = []
         
         for chunk in relevant_chunks:
@@ -223,38 +223,69 @@ class PaperChatView(generics.GenericAPIView):
                     'chunk_id': chunk.get('id', ''),
                     'content': content,
                     'phrases': phrases,
-                    'relevance_score': chunk.get('relevance_score', 0.8)
+                    'relevance_score': chunk.get('relevance_score', 0.8),
+                    'full_content': content  # Include full content for better highlighting
                 })
         
         return highlighting_data
     
     def _extract_highlight_phrases(self, content):
-        """Extract key phrases for highlighting from content."""
+        """Extract meaningful phrases for highlighting from content."""
         import re
         
-        # Split into sentences
+        # Split into sentences first
         sentences = re.split(r'[.!?]+', content)
         phrases = []
         
         for sentence in sentences:
             sentence = sentence.strip()
-            if len(sentence) < 20:
+            if len(sentence) < 30:  # Skip very short sentences
                 continue
             
-            # Extract meaningful phrases (3-8 words)
+            # Look for the most meaningful parts of the sentence
+            # Focus on longer, more complete phrases
             words = sentence.split()
-            for i in range(len(words) - 2):
-                for j in range(3, min(9, len(words) - i + 1)):
-                    phrase = ' '.join(words[i:i+j])
-                    if 15 < len(phrase) < 100:
-                        phrases.append(phrase)
             
-            # Limit phrases per sentence
-            if len(phrases) >= 5:
+            # Extract complete sentences or meaningful clauses
+            if len(words) >= 8:
+                # Take the full sentence if it's meaningful
+                if len(sentence) < 150:  # Not too long
+                    phrases.append(sentence)
+                else:
+                    # Split long sentences into meaningful parts
+                    # Look for natural break points (commas, semicolons)
+                    parts = re.split(r'[,;]', sentence)
+                    for part in parts:
+                        part = part.strip()
+                        if 20 < len(part) < 120:  # Reasonable length
+                            phrases.append(part)
+            else:
+                # For shorter sentences, use the whole thing if meaningful
+                if 20 < len(sentence) < 100:
+                    phrases.append(sentence)
+            
+            # Limit phrases per sentence to avoid overwhelming
+            if len(phrases) >= 3:
                 break
         
-        # Return unique phrases, sorted by length
-        return sorted(list(set(phrases)), key=len, reverse=True)[:10]
+        # If we didn't get enough phrases, add some key content
+        if len(phrases) < 2:
+            # Extract key content around important words
+            important_words = ['study', 'research', 'found', 'shows', 'demonstrates', 'concludes', 'results', 'method', 'approach']
+            for word in important_words:
+                if word.lower() in content.lower():
+                    # Find context around this word
+                    word_index = content.lower().find(word.lower())
+                    start = max(0, word_index - 50)
+                    end = min(len(content), word_index + len(word) + 50)
+                    context = content[start:end].strip()
+                    if 30 < len(context) < 150:
+                        phrases.append(context)
+                        break
+        
+        # Return unique phrases, sorted by relevance (longer phrases first)
+        unique_phrases = list(set(phrases))
+        return sorted(unique_phrases, key=len, reverse=True)[:5]
 
 
 class PaperHighlightsView(generics.ListAPIView):
