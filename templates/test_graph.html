@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Graph Test</title>
+    <script src="https://unpkg.com/vis-network/dist/dist/vis-network.min.js"></script>
+    <style>
+        #graphContainer {
+            width: 800px;
+            height: 600px;
+            border: 1px solid #ccc;
+        }
+    </style>
+</head>
+<body>
+    <h1>Graph Test</h1>
+    <div id="graphContainer"></div>
+    
+    <script>
+        // Test data
+        const nodes = new vis.DataSet([
+            { id: 1, label: 'Paper 1' },
+            { id: 2, label: 'Paper 2' },
+            { id: 3, label: 'Paper 3' }
+        ]);
+        
+        const edges = new vis.DataSet([
+            { from: 1, to: 2 },
+            { from: 2, to: 3 }
+        ]);
+        
+        const container = document.getElementById('graphContainer');
+        const data = { nodes, edges };
+        const options = {};
+        
+        try {
+            const network = new vis.Network(container, data, options);
+            console.log('Graph created successfully!');
+        } catch (error) {
+            console.error('Error creating graph:', error);
+        }
+    </script>
+</body>
+</html>
+

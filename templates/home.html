@@ -1,0 +1,211 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Home - Academic Reference Graph{% endblock %}
+
+{% block content %}
+<div class="container">
+    <!-- Hero Section -->
+    <div class="row mb-5">
+        <div class="col-lg-8 mx-auto text-center">
+            <h1 class="display-4 fw-bold text-primary mb-4">
+                Academic Reference Graph
+            </h1>
+            <p class="lead mb-4">
+                Discover the interconnected world of academic research through intelligent reference mapping and AI-powered paper analysis.
+            </p>
+            <div class="d-grid gap-2 d-md-flex justify-content-md-center">
+                <a href="{% url 'upload_paper' %}" class="btn btn-primary btn-lg px-4 me-md-2">
+                    <i class="fas fa-upload"></i> Upload Paper
+                </a>
+                <a href="{% url 'reference_graph' %}" class="btn btn-outline-primary btn-lg px-4">
+                    <i class="fas fa-project-diagram"></i> View Graph
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Statistics Section -->
+    <div class="row mb-5">
+        <div class="col-md-3 text-center">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <i class="fas fa-file-alt fa-3x text-primary mb-3"></i>
+                    <h3 class="card-title">{{ total_papers }}</h3>
+                    <p class="card-text text-muted">Total Papers</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 text-center">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <i class="fas fa-link fa-3x text-success mb-3"></i>
+                    <h3 class="card-title">{{ total_references|default:"0" }}</h3>
+                    <p class="card-text text-muted">References</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 text-center">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <i class="fas fa-users fa-3x text-info mb-3"></i>
+                    <h3 class="card-title">{{ total_authors|default:"0" }}</h3>
+                    <p class="card-text text-muted">Authors</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 text-center">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <i class="fas fa-chart-line fa-3x text-warning mb-3"></i>
+                    <h3 class="card-title">{{ total_citations|default:"0" }}</h3>
+                    <p class="card-text text-muted">Citations</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Papers Section -->
+    <div class="row">
+        <div class="col-12">
+            <h2 class="mb-4">
+                <i class="fas fa-clock"></i> Recent Papers
+            </h2>
+            
+            {% if papers %}
+                <div class="row">
+                    {% for paper in papers %}
+                    <div class="col-lg-6 mb-4">
+                        <div class="card h-100 shadow-sm">
+                            <div class="card-body">
+                                <h5 class="card-title">
+                                                            {% if paper.id %}
+                            <a href="{% url 'paper_detail' paper.id %}" class="text-decoration-none">
+                                {{ paper.title|truncatechars:80 }}
+                            </a>
+                        {% else %}
+                            <span class="text-muted">{{ paper.title|truncatechars:80 }}</span>
+                        {% endif %}
+                                </h5>
+                                <p class="card-text text-muted">
+                                    <i class="fas fa-user"></i> {{ paper.author }}
+                                </p>
+                                {% if paper.abstract %}
+                                <p class="card-text">{{ paper.abstract|truncatechars:150 }}</p>
+                                {% endif %}
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <small class="text-muted">
+                                        <i class="fas fa-calendar"></i> {{ paper.uploaded_at|date:"M d, Y" }}
+                                    </small>
+                                    <div class="btn-group" role="group">
+                                        {% if paper.id %}
+                                            <a href="{% url 'paper_detail' paper.id %}" class="btn btn-sm btn-outline-primary">
+                                                <i class="fas fa-eye"></i> View
+                                            </a>
+                                        {% else %}
+                                            <span class="btn btn-sm btn-outline-secondary disabled">
+                                                <i class="fas fa-info-circle"></i> No Details
+                                            </span>
+                                        {% endif %}
+                                        <button type="button" class="btn btn-sm btn-outline-info" 
+                                                onclick="showReferences('{{ paper.id }}')">
+                                            <i class="fas fa-link"></i> References
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                
+                <div class="text-center mt-4">
+                    <a href="{% url 'reference_graph' %}" class="btn btn-primary">
+                        View All Papers <i class="fas fa-arrow-right"></i>
+                    </a>
+                </div>
+            {% else %}
+                <div class="text-center py-5">
+                    <i class="fas fa-file-alt fa-4x text-muted mb-3"></i>
+                    <h4 class="text-muted">No papers uploaded yet</h4>
+                    <p class="text-muted">Be the first to upload a paper and start building the reference graph!</p>
+                    <a href="{% url 'upload_paper' %}" class="btn btn-primary">
+                        <i class="fas fa-upload"></i> Upload Your First Paper
+                    </a>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Features Section -->
+    <div class="row mt-5">
+        <div class="col-12">
+            <h2 class="text-center mb-5">Key Features</h2>
+        </div>
+        <div class="col-md-4 text-center mb-4">
+            <div class="feature-icon mb-3">
+                <i class="fas fa-brain fa-3x text-primary"></i>
+            </div>
+            <h4>AI-Powered Analysis</h4>
+            <p class="text-muted">Advanced RAG technology for intelligent paper understanding and question answering.</p>
+        </div>
+        <div class="col-md-4 text-center mb-4">
+            <div class="feature-icon mb-3">
+                <i class="fas fa-project-diagram fa-3x text-success"></i>
+            </div>
+            <h4>Reference Mapping</h4>
+            <p class="text-muted">Automatically extract and visualize the complex web of academic references.</p>
+        </div>
+        <div class="col-md-4 text-center mb-4">
+            <div class="feature-icon mb-3">
+                <i class="fas fa-comments fa-3x text-info"></i>
+            </div>
+            <h4>Interactive Chatbot</h4>
+            <p class="text-muted">Ask questions about any paper and get intelligent, context-aware responses.</p>
+        </div>
+    </div>
+</div>
+
+<!-- References Modal -->
+<div class="modal fade" id="referencesModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Paper References</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="referencesModalBody">
+                <!-- References will be loaded here -->
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function showReferences(paperId) {
+    // Load references via AJAX
+    $.get(`/api/papers/${paperId}/references/`, function(data) {
+        let html = '<div class="list-group">';
+        if (data.length > 0) {
+            data.forEach(function(ref) {
+                html += `
+                    <div class="list-group-item">
+                        <h6 class="mb-1">${ref.target_paper.title}</h6>
+                        <p class="mb-1 text-muted">${ref.target_paper.author}</p>
+                        <small class="text-muted">${ref.reference_text || 'No reference text available'}</small>
+                    </div>
+                `;
+            });
+        } else {
+            html += '<div class="list-group-item text-center text-muted">No references found</div>';
+        }
+        html += '</div>';
+        
+        $('#referencesModalBody').html(html);
+        $('#referencesModal').modal('show');
+    });
+}
+</script>
+{% endblock %}
