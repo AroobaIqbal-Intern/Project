@@ -4,6 +4,8 @@
 {% block title %}{{ paper.title }} - Paper Detail{% endblock %}
 
 {% block extra_css %}
+<!-- CSRF Token for AJAX requests -->
+<meta name="csrf-token" content="{{ csrf_token }}">
 <style>
 .paper-container {
     position: relative;
@@ -978,22 +980,39 @@ function extractReferences() {
     button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Extracting...';
     button.disabled = true;
     
+    console.log('Starting reference extraction for paper:', '{{ paper.id }}');
+    
+    // Get CSRF token from meta tag
+    const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+    console.log('CSRF Token:', csrfToken);
+    
     fetch(`/api/papers/{{ paper.id }}/process-references/`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
-            'X-CSRFToken': getCookie('csrftoken')
+            'X-CSRFToken': csrfToken
         }
     })
-    .then(response => response.json())
+    .then(response => {
+        console.log('Response status:', response.status);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+    })
     .then(data => {
+        console.log('Response data:', data);
         if (data.message) {
             alert('Reference extraction completed! Please refresh the page to see the updated references.');
+            // Optionally refresh the page automatically
+            setTimeout(() => {
+                location.reload();
+            }, 2000);
         }
     })
     .catch(error => {
-        console.error('Error:', error);
-        alert('Error during reference extraction. Please try again.');
+        console.error('Error during reference extraction:', error);
+        alert(`Error during reference extraction: ${error.message}. Please check the console for details.`);
     })
     .finally(() => {
         button.innerHTML = originalText;
@@ -1008,3 +1027,4 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 {% endblock %}
+

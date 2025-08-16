@@ -1299,3 +1299,9 @@ Not Found: /api/papers/statistics/
 Not Found: /api/papers/33e7dc45-945b-4b0a-bbc0-94b3ecd54ef1/extract-references/
 Not Found: /api/papers/statistics/
 Not Found: /api/papers/d9bb8c20-9e1a-4891-87bb-5e47df77cea9/extract-references/
+Watching for file changes with StatReloader
+Not Found: /api/papers/statistics/
+Bad Request: /api/papers/8d472e5b-9b9e-4cda-b678-e1d80db79496/process-references/
+Bad Request: /api/papers/8d472e5b-9b9e-4cda-b678-e1d80db79496/process-references/
+Not Found: /api/papers/statistics/
+Not Found: /api/papers/statistics/

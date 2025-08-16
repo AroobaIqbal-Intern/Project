@@ -150,6 +150,34 @@ class GraphDataView(generics.GenericAPIView):
 @api_view(['POST'])
 def process_paper_references(request, pk):
     """Manually trigger reference extraction for a paper."""
-    paper = get_object_or_404(Paper, pk=pk)
-    extract_references_from_paper(str(paper.id))
-    return Response({'message': 'Reference extraction completed'}, status=status.HTTP_200_OK)
+    try:
+        print(f"Processing references for paper: {pk}")
+        paper = get_object_or_404(Paper, pk=pk)
+        print(f"Found paper: {paper.title}")
+        
+        # Check if paper has content
+        if not paper.content_text and not paper.file:
+            return Response({
+                'error': 'Paper has no content or file to process'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Extract references
+        success = extract_references_from_paper(str(paper.id))
+        
+        if success:
+            # Refresh paper to get updated reference count
+            paper.refresh_from_db()
+            return Response({
+                'message': 'Reference extraction completed successfully',
+                'references_found': paper.references.count()
+            }, status=status.HTTP_200_OK)
+        else:
+            return Response({
+                'error': 'Reference extraction failed'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+    except Exception as e:
+        print(f"Error in process_paper_references: {e}")
+        return Response({
+            'error': f'Error processing references: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
