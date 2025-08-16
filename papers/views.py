@@ -75,8 +75,8 @@ class PaperUploadView(generics.CreateAPIView):
     
     def perform_create(self, serializer):
         paper = serializer.save()
-        # Extract references asynchronously
-        extract_references_from_paper.delay(paper.id)
+        # Extract references synchronously
+        extract_references_from_paper(str(paper.id))
 
 
 class PaperSearchView(generics.ListAPIView):
@@ -151,5 +151,5 @@ class GraphDataView(generics.GenericAPIView):
 def process_paper_references(request, pk):
     """Manually trigger reference extraction for a paper."""
     paper = get_object_or_404(Paper, pk=pk)
-    extract_references_from_paper.delay(paper.id)
-    return Response({'message': 'Reference extraction started'}, status=status.HTTP_202_ACCEPTED)
+    extract_references_from_paper(str(paper.id))
+    return Response({'message': 'Reference extraction completed'}, status=status.HTTP_200_OK)

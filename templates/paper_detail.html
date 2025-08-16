@@ -280,6 +280,9 @@
                 <h3 class="mb-4">
                     <i class="fas fa-link"></i> References 
                     <span class="badge bg-primary">{{ references.count }}</span>
+                    <button class="btn btn-sm btn-outline-primary ms-2" onclick="extractReferences()" title="Manually extract references">
+                        <i class="fas fa-sync-alt"></i> Extract References
+                    </button>
                 </h3>
                 
                 {% if references %}
@@ -751,6 +754,36 @@ function retryProcessing() {
     .catch(error => {
         console.error('Error:', error);
         alert('Error starting processing. Please try again.');
+    })
+    .finally(() => {
+        button.innerHTML = originalText;
+        button.disabled = false;
+    });
+}
+
+function extractReferences() {
+    const button = event.target;
+    const originalText = button.innerHTML;
+    
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Extracting...';
+    button.disabled = true;
+    
+    fetch(`/api/papers/{{ paper.id }}/extract-references/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.message) {
+            alert('Reference extraction completed! Please refresh the page to see the updated references.');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error during reference extraction. Please try again.');
     })
     .finally(() => {
         button.innerHTML = originalText;

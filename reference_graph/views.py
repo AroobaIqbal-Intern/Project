@@ -61,8 +61,8 @@ def upload_paper(request):
                     file=uploaded_file
                 )
                 
-                # Extract references asynchronously
-                extract_references_from_paper.delay(paper.id)
+                # Extract references synchronously
+                extract_references_from_paper(str(paper.id))
                 
                 messages.success(request, 'Paper uploaded successfully! Processing references...')
                 return redirect('paper_detail', paper_id=paper.id)

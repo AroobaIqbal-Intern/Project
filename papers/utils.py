@@ -15,25 +15,33 @@ def extract_references_from_paper(paper_id: str) -> bool:
     """Extract references from a paper and create reference relationships."""
     try:
         paper = Paper.objects.get(id=paper_id)
+        print(f"Processing paper: {paper.title[:50]}...")
         
         # Extract text content if not already done
         if not paper.content_text:
+            print("  - Extracting text content...")
             rag_engine = RAGEngine()
             rag_engine.process_paper(paper)
         
         # Extract references from text
         references = _extract_references_from_text(paper.content_text)
+        print(f"  - Found {len(references)} potential references")
         
         # Create or find referenced papers
+        created_count = 0
         for ref_data in references:
             referenced_paper = _find_or_create_referenced_paper(ref_data)
             if referenced_paper:
                 # Create reference relationship
-                Reference.objects.get_or_create(
+                ref_obj, created = Reference.objects.get_or_create(
                     source_paper=paper,
                     target_paper=referenced_paper,
                     defaults={'reference_text': ref_data.get('text', '')}
                 )
+                if created:
+                    created_count += 1
+        
+        print(f"  - Created {created_count} reference relationships")
         
         # Update paper metadata
         _update_paper_metadata(paper)
@@ -46,36 +54,70 @@ def extract_references_from_paper(paper_id: str) -> bool:
 
 
 def _extract_references_from_text(text: str) -> List[Dict]:
-    """Extract reference information from paper text."""
+    """Extract reference information from paper text with improved patterns."""
     references = []
     
-    # Common reference patterns
+    # Improved reference patterns
     patterns = [
         # Pattern 1: Author et al. (Year) Title
         r'([A-Z][a-z]+(?:\s+et\s+al\.)?)\s*\((\d{4})\)\s*([^.!?]+[.!?])',
+        
         # Pattern 2: Author, A. (Year) Title
         r'([A-Z][a-z]+,\s*[A-Z]\.)\s*\((\d{4})\)\s*([^.!?]+[.!?])',
+        
         # Pattern 3: Author, A. and Author, B. (Year) Title
         r'([A-Z][a-z]+,\s*[A-Z]\.\s+and\s+[A-Z][a-z]+,\s*[A-Z]\.)\s*\((\d{4})\)\s*([^.!?]+[.!?])',
+        
         # Pattern 4: Author et al. (Year). Title
         r'([A-Z][a-z]+(?:\s+et\s+al\.)?)\s*\((\d{4})\)\.\s*([^.!?]+[.!?])',
+        
+        # Pattern 5: Author et al., Year - comma format
+        r'([A-Z][a-z]+(?:\s+et\s+al\.)?),\s*(\d{4})\s*([^.!?]+[.!?])',
+        
+        # Pattern 6: Author (Year) - simple format
+        r'([A-Z][a-z]+(?:\s+et\s+al\.)?)\s*\((\d{4})\)',
+        
+        # Pattern 7: Author, A. B. (Year) - initials
+        r'([A-Z][a-z]+,\s*[A-Z]\.[\sA-Z\.]*)\s*\((\d{4})\)\s*([^.!?]+[.!?])',
+        
+        # Pattern 8: Author & Author (Year) - ampersand format
+        r'([A-Z][a-z]+(?:\s+&\s+[A-Z][a-z]+)*)\s*\((\d{4})\)\s*([^.!?]+[.!?])',
     ]
     
     for pattern in patterns:
-        matches = re.finditer(pattern, text)
+        matches = re.finditer(pattern, text, re.IGNORECASE)
         for match in matches:
-            author = match.group(1).strip()
-            year = match.group(2).strip()
-            title = match.group(3).strip()
-            
-            references.append({
-                'author': author,
-                'year': int(year),
-                'title': title,
-                'text': match.group(0)
-            })
+            try:
+                author = match.group(1).strip()
+                year = match.group(2).strip()
+                title = match.group(3).strip() if len(match.groups()) > 2 else ""
+                
+                # Basic validation
+                if (len(author) > 3 and 
+                    year.isdigit() and 
+                    len(year) == 4 and 
+                    1900 < int(year) < 2030):
+                    
+                    references.append({
+                        'author': author,
+                        'year': int(year),
+                        'title': title,
+                        'text': match.group(0)
+                    })
+            except (IndexError, ValueError):
+                # Skip malformed matches
+                continue
     
-    return references
+    # Remove duplicates based on author and year
+    unique_refs = []
+    seen = set()
+    for ref in references:
+        key = (ref['author'].lower(), ref['year'])
+        if key not in seen:
+            seen.add(key)
+            unique_refs.append(ref)
+    
+    return unique_refs
 
 
 def _find_or_create_referenced_paper(ref_data: Dict) -> Optional[Paper]:
