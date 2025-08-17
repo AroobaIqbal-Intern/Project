@@ -129,3 +129,8 @@ def test_graph(request):
 def chatbot_test(request):
     """Test page for chatbot functionality."""
     return render(request, 'chatbot_test.html')
+
+
+def enhanced_qa(request):
+    """Enhanced Q&A interface with cross-paper capabilities."""
+    return render(request, 'enhanced_qa.html')

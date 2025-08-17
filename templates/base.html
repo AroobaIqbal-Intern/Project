@@ -36,6 +36,11 @@
                     <li class="nav-item">
                         <a class="nav-link" href="{% url 'upload_paper' %}">Upload Paper</a>
                     </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{% url 'enhanced_qa' %}">
+                            <i class="fas fa-robot"></i> Enhanced Q&A
+                        </a>
+                    </li>
                 </ul>
                 <form class="d-flex" method="GET" action="{% url 'home' %}">
                     <input class="form-control me-2" type="search" name="search" placeholder="Search papers..." aria-label="Search">

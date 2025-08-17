@@ -11,4 +11,5 @@ urlpatterns = [
     path('upload/', views.upload_paper, name='upload_paper'),
     path('test-graph/', views.test_graph, name='test_graph'),
     path('chatbot-test/', views.chatbot_test, name='chatbot_test'),
+    path('enhanced-qa/', views.enhanced_qa, name='enhanced_qa'),
 ]
