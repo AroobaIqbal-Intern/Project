@@ -96,7 +96,9 @@ def _extract_references_from_text(text: str) -> List[Dict]:
                 if (len(author) > 3 and 
                     year.isdigit() and 
                     len(year) == 4 and 
-                    1900 < int(year) < 2030):
+                    1900 < int(year) < 2030 and
+                    len(title) > 10 and  # Ensure title has meaningful content
+                    not title.lower() in ['correction', 'pages', 'figure', 'table', 'appendix']):  # Skip common non-paper references
                     
                     references.append({
                         'author': author,
@@ -123,10 +125,28 @@ def _extract_references_from_text(text: str) -> List[Dict]:
 def _find_or_create_referenced_paper(ref_data: Dict) -> Optional[Paper]:
     """Find or create a referenced paper."""
     try:
-        # Try to find existing paper
+        # Try to find existing paper with better matching
+        # First try exact title match
+        existing_paper = Paper.objects.filter(
+            title__iexact=ref_data['title']
+        ).first()
+        
+        if existing_paper:
+            return existing_paper
+        
+        # Try partial title match with author
         existing_paper = Paper.objects.filter(
             title__icontains=ref_data['title'][:100],  # Use first 100 chars for matching
             author__icontains=ref_data['author'][:50]   # Use first 50 chars for matching
+        ).first()
+        
+        if existing_paper:
+            return existing_paper
+        
+        # Try author and year match
+        existing_paper = Paper.objects.filter(
+            author__icontains=ref_data['author'][:50],
+            year=ref_data['year']
         ).first()
         
         if existing_paper:
@@ -138,11 +158,29 @@ def _find_or_create_referenced_paper(ref_data: Dict) -> Optional[Paper]:
             return external_paper
         
         # Create placeholder paper if not found
+        # Store reference text as content for display purposes
+        content_text = f"""Reference Information:
+{ref_data['text']}
+
+Paper Details:
+- Title: {ref_data['title']}
+- Author: {ref_data['author']}
+- Year: {ref_data['year']}
+
+This paper was referenced in the paper "{paper.title}" by {paper.author}. The full content is not available as the original document was not uploaded to the system.
+
+To view the complete paper, you would need to:
+- Upload the actual PDF or document file using the "Upload This Paper" button above
+- Or find the paper through external sources like arXiv, ResearchGate, or the publisher's website
+
+You can also use the chatbot to ask questions about this reference and its relationship to the main paper."""
+        
         return Paper.objects.create(
             title=ref_data['title'][:500],  # Limit title length
             author=ref_data['author'][:200],  # Limit author length
             year=ref_data['year'],
-            processed=False
+            content_text=content_text,
+            processed=True  # Mark as processed since we have content
         )
         
     except Exception as e:
@@ -175,14 +213,17 @@ def _search_external_paper(ref_data: Dict) -> Optional[Paper]:
                 doi = item.get('DOI', '')
                 journal = item.get('container-title', [''])[0] if item.get('container-title') else ''
                 
-                # Create paper
+                # Create paper with content from external source
+                content_text = f"Title: {title}\nAuthor: {author}\nYear: {year}\nJournal: {journal}\nDOI: {doi}\n\nThis paper was found through external search. The full content is not available as the original document was not uploaded to the system.\n\nTo view the complete paper, you would need to:\n- Upload the actual PDF or document file\n- Or access it through the DOI: {doi if doi else 'Not available'}"
+                
                 return Paper.objects.create(
                     title=title[:500],
                     author=author[:200],
                     year=year,
                     doi=doi,
                     journal=journal,
-                    processed=False
+                    content_text=content_text,
+                    processed=True
                 )
         
         # Try arXiv API
@@ -204,11 +245,14 @@ def _search_external_paper(ref_data: Dict) -> Optional[Paper]:
                     title = title_match.group(1).strip()
                     author = author_match.group(1).strip()
                     
+                    content_text = f"Title: {title}\nAuthor: {author}\nYear: {ref_data['year']}\nSource: arXiv\n\nThis paper was found through arXiv search. The full content is not available as the original document was not uploaded to the system.\n\nTo view the complete paper, you would need to:\n- Upload the actual PDF or document file\n- Or access it through arXiv"
+                    
                     return Paper.objects.create(
                         title=title[:500],
                         author=author[:200],
                         year=ref_data['year'],
-                        processed=False
+                        content_text=content_text,
+                        processed=True
                     )
         
         return None
