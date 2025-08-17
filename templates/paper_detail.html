@@ -219,6 +219,8 @@
                         <i class="fas fa-user"></i> {{ paper.author }}
                         {% if paper.year %} • <i class="fas fa-calendar"></i> {{ paper.year }}{% endif %}
                         {% if paper.journal %} • <i class="fas fa-book"></i> {{ paper.journal }}{% endif %}
+                        {% if paper.reference_count %} • <i class="fas fa-link"></i> {{ paper.reference_count }} references{% endif %}
+                        {% if paper.citation_count %} • <i class="fas fa-quote-left"></i> {{ paper.citation_count }} citations{% endif %}
                     </p>
                     {% if paper.abstract %}
                     <p class="lead">{{ paper.abstract }}</p>
@@ -292,7 +294,29 @@
                                                 <li>Upload the actual PDF or document file</li>
                                                 <li>Or find the paper through external sources</li>
                                             </ul>
+                                            <div class="mt-2">
+                                                <button class="btn btn-sm btn-outline-primary" onclick="uploadReferencedPaper()">
+                                                    <i class="fas fa-upload"></i> Upload This Paper
+                                                </button>
+                                            </div>
                                         </div>
+                                        
+                                        {% if cited_by %}
+                                        <div class="alert alert-warning mt-3">
+                                            <h6><i class="fas fa-link"></i> Referenced In</h6>
+                                            <p class="mb-2">This paper is referenced in the following uploaded papers:</p>
+                                            <ul class="text-left">
+                                                {% for ref in cited_by %}
+                                                <li>
+                                                    <a href="{% url 'paper_detail' ref.source_paper.id %}" class="text-decoration-none">
+                                                        {{ ref.source_paper.title|truncatechars:80 }}
+                                                    </a>
+                                                    <small class="text-muted">by {{ ref.source_paper.author }}</small>
+                                                </li>
+                                                {% endfor %}
+                                            </ul>
+                                        </div>
+                                        {% endif %}
                                     </div>
                                 {% endif %}
                             </div>
@@ -334,8 +358,18 @@
                                     {% if ref.target_paper.year %} • {{ ref.target_paper.year }}{% endif %}
                                 </p>
                                 {% if ref.reference_text %}
-                                <small class="text-muted">{{ ref.reference_text|truncatechars:150 }}</small>
+                                <small class="text-muted d-block mt-1">{{ ref.reference_text|truncatechars:150 }}</small>
                                 {% endif %}
+                                <div class="mt-2">
+                                    <small class="text-info">
+                                        <i class="fas fa-link"></i> 
+                                        {% if ref.target_paper.file %}
+                                            <span class="text-success">Has uploaded content</span>
+                                        {% else %}
+                                            <span class="text-warning">Reference only - no uploaded content</span>
+                                        {% endif %}
+                                    </small>
+                                </div>
                             </div>
                         </div>
                         {% endfor %}
@@ -1018,6 +1052,70 @@ function extractReferences() {
         button.innerHTML = originalText;
         button.disabled = false;
     });
+}
+
+function uploadReferencedPaper() {
+    // Redirect to upload page with pre-filled paper information
+    const paperTitle = '{{ paper.title|escapejs }}';
+    const paperAuthor = '{{ paper.author|escapejs }}';
+    const paperYear = '{{ paper.year }}';
+    
+    // Create a form to submit to upload page
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '{% url "upload_paper" %}';
+    
+    // Add CSRF token
+    const csrfInput = document.createElement('input');
+    csrfInput.type = 'hidden';
+    csrfInput.name = 'csrfmiddlewaretoken';
+    csrfInput.value = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+    form.appendChild(csrfInput);
+    
+    // Add paper info as hidden fields
+    const titleInput = document.createElement('input');
+    titleInput.type = 'hidden';
+    titleInput.name = 'title';
+    titleInput.value = paperTitle;
+    form.appendChild(titleInput);
+    
+    const authorInput = document.createElement('input');
+    authorInput.type = 'hidden';
+    authorInput.name = 'author';
+    authorInput.value = paperAuthor;
+    form.appendChild(authorInput);
+    
+    const yearInput = document.createElement('input');
+    yearInput.type = 'hidden';
+    yearInput.name = 'year';
+    yearInput.value = paperYear;
+    form.appendChild(yearInput);
+    
+    // Add file input
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.name = 'paper_file';
+    fileInput.accept = '.pdf,.docx,.txt';
+    fileInput.style.display = 'none';
+    fileInput.required = true;
+    form.appendChild(fileInput);
+    
+    // Add form to page and trigger file selection
+    document.body.appendChild(form);
+    
+    // Show file selection dialog
+    fileInput.click();
+    
+    // Handle file selection
+    fileInput.onchange = function() {
+        if (fileInput.files.length > 0) {
+            // Submit form
+            form.submit();
+        } else {
+            // Remove form if no file selected
+            document.body.removeChild(form);
+        }
+    };
 }
 
 // Initialize
