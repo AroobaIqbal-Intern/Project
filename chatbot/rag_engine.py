@@ -1,20 +1,23 @@
 """
-Simplified RAG (Retrieval-Augmented Generation) Engine for academic papers.
+Enhanced RAG (Retrieval-Augmented Generation) Engine for academic papers with cross-paper capabilities.
 """
 import os
 import json
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple, Optional, Set
 from django.conf import settings
-from papers.models import Paper, PaperChunk
+from papers.models import Paper, PaperChunk, Reference
+from django.db.models import Q
+import re
 
 
 class RAGEngine:
-    """Simplified RAG engine for processing academic papers and answering questions."""
+    """Enhanced RAG engine for processing academic papers and answering questions across the reference network."""
     
     def __init__(self):
         self.chunk_size = 1000
         self.chunk_overlap = 200
         self.top_k = 5
+        self.max_papers = 10  # Maximum papers to search across
     
     def process_paper(self, paper: Paper) -> bool:
         """Process a paper and create chunks."""
@@ -49,45 +52,462 @@ class RAGEngine:
             print(f"Error processing paper {paper.id}: {e}")
             return False
     
-    def query(self, question: str, paper: Paper) -> Tuple[str, List[Dict], List[Dict]]:
-        """Query the RAG system with a question about a specific paper."""
+    def query(self, question: str, paper: Paper = None, cross_paper: bool = True) -> Tuple[str, List[Dict], List[Dict]]:
+        """Query the RAG system with a question about a specific paper or across the entire network."""
         try:
-            # Ensure paper is processed
-            if not paper.processed:
-                self.process_paper(paper)
+            if paper:
+                # Single paper query
+                return self._query_single_paper(question, paper)
+            elif cross_paper:
+                # Cross-paper query across the entire network
+                return self._query_cross_paper(question)
+            else:
+                return "Please specify a paper or enable cross-paper search.", [], []
             
-            # Get relevant chunks (simplified search)
-            relevant_chunks = self._get_relevant_chunks_simple(question, paper)
+        except Exception as e:
+            print(f"Error in RAG query: {e}")
+            return f"I encountered an error while processing your question: {str(e)}", [], []
+    
+    def _query_single_paper(self, question: str, paper: Paper) -> Tuple[str, List[Dict], List[Dict]]:
+        """Query a single paper."""
+        # Ensure paper is processed
+        if not paper.processed:
+            self.process_paper(paper)
+        
+        # Get relevant chunks
+        relevant_chunks = self._get_relevant_chunks_simple(question, paper)
+        
+        if not relevant_chunks:
+            return "I couldn't find relevant information in this paper to answer your question.", [], []
+        
+        # Generate response
+        response = self._generate_simple_response(question, relevant_chunks, paper)
+        
+        # Format chunks for response
+        formatted_chunks = []
+        for chunk in relevant_chunks:
+            formatted_chunks.append({
+                'id': str(chunk.id),
+                'content': chunk.content,
+                'chunk_index': chunk.chunk_index,
+                'page_number': chunk.page_number,
+                'section': chunk.section,
+                'paper_title': paper.title,
+                'paper_author': paper.author
+            })
+        
+        # Format sources
+        sources = [{
+            'chunk_id': str(chunk.id),
+            'content_preview': chunk.content[:200] + '...',
+            'similarity_score': 0.8,  # Placeholder score
+            'paper_title': paper.title,
+            'paper_author': paper.author
+        } for chunk in relevant_chunks]
+        
+        return response, formatted_chunks, sources
+    
+    def _query_cross_paper(self, question: str) -> Tuple[str, List[Dict], List[Dict]]:
+        """Query across multiple papers in the reference network."""
+        try:
+            # Get relevant papers based on question
+            relevant_papers = self._find_relevant_papers(question)
             
-            if not relevant_chunks:
-                return "I couldn't find relevant information in this paper to answer your question.", [], []
+            if not relevant_papers:
+                return "I couldn't find any papers relevant to your question in the system.", [], []
             
-            # Generate simple response
-            response = self._generate_simple_response(question, relevant_chunks, paper)
+            # Get relevant chunks from all papers
+            all_relevant_chunks = []
+            for paper in relevant_papers:
+                chunks = self._get_relevant_chunks_simple(question, paper)
+                for chunk in chunks:
+                    all_relevant_chunks.append({
+                        'chunk': chunk,
+                        'paper': paper,
+                        'relevance_score': self._calculate_relevance_score(question, chunk.content)
+                    })
+            
+            # Sort by relevance and take top chunks
+            all_relevant_chunks.sort(key=lambda x: x['relevance_score'], reverse=True)
+            top_chunks = all_relevant_chunks[:self.top_k * 2]  # Get more chunks for cross-paper analysis
+            
+            if not top_chunks:
+                return "I couldn't find relevant information across the papers to answer your question.", [], []
+            
+            # Generate cross-paper response
+            response = self._generate_cross_paper_response(question, top_chunks)
             
             # Format chunks for response
             formatted_chunks = []
-            for chunk in relevant_chunks:
+            for item in top_chunks:
+                chunk = item['chunk']
+                paper = item['paper']
                 formatted_chunks.append({
                     'id': str(chunk.id),
                     'content': chunk.content,
                     'chunk_index': chunk.chunk_index,
                     'page_number': chunk.page_number,
-                    'section': chunk.section
+                    'section': chunk.section,
+                    'paper_title': paper.title,
+                    'paper_author': paper.author,
+                    'relevance_score': item['relevance_score']
                 })
             
             # Format sources
             sources = [{
-                'chunk_id': str(chunk.id),
-                'content_preview': chunk.content[:200] + '...',
-                'similarity_score': 0.8  # Placeholder score
-            } for chunk in relevant_chunks]
+                'chunk_id': str(item['chunk'].id),
+                'content_preview': item['chunk'].content[:200] + '...',
+                'similarity_score': item['relevance_score'],
+                'paper_title': item['paper'].title,
+                'paper_author': item['paper'].author
+            } for item in top_chunks]
             
             return response, formatted_chunks, sources
             
         except Exception as e:
-            print(f"Error in RAG query: {e}")
-            return f"I encountered an error while processing your question: {str(e)}", [], []
+            print(f"Error in cross-paper query: {e}")
+            return f"I encountered an error while searching across papers: {str(e)}", [], []
+    
+    def _find_relevant_papers(self, question: str) -> List[Paper]:
+        """Find papers relevant to the question."""
+        try:
+            # Extract keywords from question
+            keywords = self._extract_keywords(question)
+            
+            # Search in paper titles, abstracts, and content
+            relevant_papers = []
+            
+            # Search in titles and abstracts
+            title_abstract_papers = Paper.objects.filter(
+                Q(title__icontains=keywords[0]) | 
+                Q(abstract__icontains=keywords[0]) |
+                Q(content_text__icontains=keywords[0])
+            )[:self.max_papers]
+            
+            relevant_papers.extend(title_abstract_papers)
+            
+            # Search in content text for other keywords
+            for keyword in keywords[1:3]:  # Use top 3 keywords
+                content_papers = Paper.objects.filter(
+                    content_text__icontains=keyword
+                ).exclude(id__in=[p.id for p in relevant_papers])[:5]
+                
+                relevant_papers.extend(content_papers)
+            
+            # Remove duplicates and limit results
+            unique_papers = []
+            seen_ids = set()
+            for paper in relevant_papers:
+                if paper.id not in seen_ids and len(unique_papers) < self.max_papers:
+                    unique_papers.append(paper)
+                    seen_ids.add(paper.id)
+            
+            return unique_papers
+            
+        except Exception as e:
+            print(f"Error finding relevant papers: {e}")
+            return []
+    
+    def _extract_keywords(self, question: str) -> List[str]:
+        """Extract important keywords from the question."""
+        # Remove common words
+        stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'can', 'what', 'how', 'why', 'when', 'where', 'who', 'which', 'that', 'this', 'these', 'those', 'about', 'from', 'into', 'through', 'during', 'before', 'after', 'above', 'below', 'between', 'among'}
+        
+        # Extract words
+        words = re.findall(r'\b\w+\b', question.lower())
+        
+        # Filter out stop words and short words
+        keywords = [word for word in words if word not in stop_words and len(word) > 3]
+        
+        # Return unique keywords
+        return list(set(keywords))
+    
+    def _calculate_relevance_score(self, question: str, content: str) -> float:
+        """Calculate relevance score between question and content."""
+        try:
+            question_words = set(self._extract_keywords(question))
+            content_words = set(self._extract_keywords(content))
+            
+            if not question_words or not content_words:
+                return 0.0
+            
+            # Calculate Jaccard similarity
+            intersection = question_words.intersection(content_words)
+            union = question_words.union(content_words)
+            
+            base_score = len(intersection) / len(union) if union else 0.0
+            
+            # Boost score for exact phrase matches
+            question_lower = question.lower()
+            content_lower = content.lower()
+            
+            phrase_boost = 0.0
+            for keyword in question_words:
+                if keyword in content_lower:
+                    phrase_boost += 0.1
+            
+            return min(1.0, base_score + phrase_boost)
+            
+        except Exception as e:
+            print(f"Error calculating relevance score: {e}")
+            return 0.0
+    
+    def _generate_cross_paper_response(self, question: str, relevant_chunks: List[Dict]) -> str:
+        """Generate a response based on information from multiple papers."""
+        try:
+            # Group chunks by paper
+            papers_info = {}
+            for item in relevant_chunks:
+                paper = item['paper']
+                if paper.title not in papers_info:
+                    papers_info[paper.title] = {
+                        'author': paper.author,
+                        'year': paper.year,
+                        'chunks': [],
+                        'score': 0.0
+                    }
+                
+                papers_info[paper.title]['chunks'].append(item['chunk'].content)
+                papers_info[paper.title]['score'] += item['relevance_score']
+            
+            # Sort papers by relevance score
+            sorted_papers = sorted(papers_info.items(), key=lambda x: x[1]['score'], reverse=True)
+            
+            # Generate response
+            response_parts = []
+            response_parts.append(f"Based on my analysis of {len(sorted_papers)} relevant papers, here's what I found:")
+            
+            for paper_title, info in sorted_papers[:3]:  # Top 3 papers
+                response_parts.append(f"\n**{paper_title}** ({info['author']}, {info['year']}):")
+                
+                # Summarize key points from this paper
+                key_points = self._extract_key_points(info['chunks'], question)
+                for point in key_points[:2]:  # Top 2 points per paper
+                    response_parts.append(f"- {point}")
+            
+            # Add cross-paper insights
+            if len(sorted_papers) > 1:
+                response_parts.append(f"\n**Cross-paper insights:**")
+                insights = self._generate_cross_paper_insights(relevant_chunks, question)
+                for insight in insights:
+                    response_parts.append(f"- {insight}")
+            
+            return "\n".join(response_parts)
+            
+        except Exception as e:
+            print(f"Error generating cross-paper response: {e}")
+            return "I found relevant information across multiple papers, but encountered an error while generating a comprehensive response."
+    
+    def _extract_key_points(self, chunks: List[str], question: str) -> List[str]:
+        """Extract key points from chunks relevant to the question."""
+        try:
+            key_points = []
+            
+            for chunk in chunks:
+                # Look for sentences that contain question keywords
+                sentences = re.split(r'[.!?]+', chunk)
+                keywords = self._extract_keywords(question)
+                
+                for sentence in sentences:
+                    sentence = sentence.strip()
+                    if len(sentence) > 20 and any(keyword in sentence.lower() for keyword in keywords):
+                        # Clean up sentence
+                        sentence = re.sub(r'\s+', ' ', sentence).strip()
+                        if sentence and len(sentence) < 200:  # Limit length
+                            key_points.append(sentence)
+            
+            return key_points[:5]  # Return top 5 points
+            
+        except Exception as e:
+            print(f"Error extracting key points: {e}")
+            return []
+    
+    def _generate_cross_paper_insights(self, relevant_chunks: List[Dict], question: str) -> List[str]:
+        """Generate insights by comparing information across papers."""
+        try:
+            insights = []
+            
+            # Look for common themes
+            all_content = " ".join([item['chunk'].content for item in relevant_chunks])
+            
+            # Extract common methodologies, findings, or conclusions
+            methodologies = re.findall(r'\b(method|methodology|approach|technique|algorithm|framework)\b', all_content, re.IGNORECASE)
+            findings = re.findall(r'\b(find|found|discover|reveal|show|demonstrate|indicate)\b', all_content, re.IGNORECASE)
+            conclusions = re.findall(r'\b(conclude|conclusion|result|outcome|implication)\b', all_content, re.IGNORECASE)
+            
+            if methodologies:
+                insights.append(f"Multiple papers discuss similar methodologies and approaches.")
+            
+            if findings:
+                insights.append(f"The papers present various findings and discoveries related to your question.")
+            
+            if conclusions:
+                insights.append(f"There are several conclusions and implications drawn across the papers.")
+            
+            # Add general insight about coverage
+            if len(relevant_chunks) > 5:
+                insights.append(f"The topic is well-covered across multiple papers, suggesting it's an active area of research.")
+            
+            return insights
+            
+        except Exception as e:
+            print(f"Error generating cross-paper insights: {e}")
+            return []
+    
+    def query_reference_network(self, question: str, start_paper: Paper, max_depth: int = 2) -> Tuple[str, List[Dict], List[Dict]]:
+        """Query the reference network starting from a specific paper."""
+        try:
+            # Get papers in the reference network
+            network_papers = self._get_reference_network_papers(start_paper, max_depth)
+            
+            if not network_papers:
+                return f"I couldn't find any papers in the reference network starting from '{start_paper.title}'.", [], []
+            
+            # Search across the network
+            all_relevant_chunks = []
+            for paper in network_papers:
+                chunks = self._get_relevant_chunks_simple(question, paper)
+                for chunk in chunks:
+                    all_relevant_chunks.append({
+                        'chunk': chunk,
+                        'paper': paper,
+                        'relevance_score': self._calculate_relevance_score(question, chunk.content)
+                    })
+            
+            # Sort by relevance
+            all_relevant_chunks.sort(key=lambda x: x['relevance_score'], reverse=True)
+            top_chunks = all_relevant_chunks[:self.top_k * 2]
+            
+            if not top_chunks:
+                return f"I couldn't find relevant information in the reference network to answer your question.", [], []
+            
+            # Generate network response
+            response = self._generate_network_response(question, top_chunks, start_paper)
+            
+            # Format response
+            formatted_chunks = []
+            for item in top_chunks:
+                chunk = item['chunk']
+                paper = item['paper']
+                formatted_chunks.append({
+                    'id': str(chunk.id),
+                    'content': chunk.content,
+                    'chunk_index': chunk.chunk_index,
+                    'paper_title': paper.title,
+                    'paper_author': paper.author,
+                    'relevance_score': item['relevance_score']
+                })
+            
+            sources = [{
+                'chunk_id': str(item['chunk'].id),
+                'content_preview': item['chunk'].content[:200] + '...',
+                'similarity_score': item['relevance_score'],
+                'paper_title': item['paper'].title,
+                'paper_author': item['paper'].author
+            } for item in top_chunks]
+            
+            return response, formatted_chunks, sources
+            
+        except Exception as e:
+            print(f"Error querying reference network: {e}")
+            return f"I encountered an error while searching the reference network: {str(e)}", [], []
+    
+    def _get_reference_network_papers(self, start_paper: Paper, max_depth: int) -> List[Paper]:
+        """Get all papers in the reference network up to max_depth."""
+        try:
+            network_papers = [start_paper]
+            visited = {start_paper.id}
+            
+            def _add_papers_recursive(paper: Paper, depth: int):
+                if depth >= max_depth:
+                    return
+                
+                # Add referenced papers
+                for ref in paper.references.all():
+                    if ref.target_paper.id not in visited:
+                        network_papers.append(ref.target_paper)
+                        visited.add(ref.target_paper.id)
+                        _add_papers_recursive(ref.target_paper, depth + 1)
+                
+                # Add papers that cite this paper
+                for citation in paper.cited_by.all():
+                    if citation.source_paper.id not in visited:
+                        network_papers.append(citation.source_paper)
+                        visited.add(citation.source_paper.id)
+                        _add_papers_recursive(citation.source_paper, depth + 1)
+            
+            _add_papers_recursive(start_paper, 0)
+            return network_papers
+            
+        except Exception as e:
+            print(f"Error getting reference network papers: {e}")
+            return [start_paper]
+    
+    def _generate_network_response(self, question: str, relevant_chunks: List[Dict], start_paper: Paper) -> str:
+        """Generate a response for reference network queries."""
+        try:
+            response_parts = []
+            response_parts.append(f"Based on my analysis of the reference network starting from '{start_paper.title}', here's what I found:")
+            
+            # Group by paper and show relationships
+            papers_info = {}
+            for item in relevant_chunks:
+                paper = item['paper']
+                if paper.title not in papers_info:
+                    papers_info[paper.title] = {
+                        'author': paper.author,
+                        'year': paper.year,
+                        'chunks': [],
+                        'score': 0.0,
+                        'relationship': self._get_paper_relationship(paper, start_paper)
+                    }
+                
+                papers_info[paper.title]['chunks'].append(item['chunk'].content)
+                papers_info[paper.title]['score'] += item['relevance_score']
+            
+            # Sort by relevance
+            sorted_papers = sorted(papers_info.items(), key=lambda x: x[1]['score'], reverse=True)
+            
+            for paper_title, info in sorted_papers[:3]:
+                relationship = info['relationship']
+                response_parts.append(f"\n**{paper_title}** ({info['author']}, {info['year']}) - {relationship}:")
+                
+                key_points = self._extract_key_points(info['chunks'], question)
+                for point in key_points[:2]:
+                    response_parts.append(f"- {point}")
+            
+            return "\n".join(response_parts)
+            
+        except Exception as e:
+            print(f"Error generating network response: {e}")
+            return "I found relevant information in the reference network, but encountered an error while generating a response."
+    
+    def _get_paper_relationship(self, paper: Paper, start_paper: Paper) -> str:
+        """Get the relationship between two papers."""
+        try:
+            if paper.id == start_paper.id:
+                return "Starting paper"
+            
+            # Check if paper is referenced by start_paper
+            if start_paper.references.filter(target_paper=paper).exists():
+                return "Referenced by starting paper"
+            
+            # Check if paper cites start_paper
+            if paper.references.filter(target_paper=start_paper).exists():
+                return "Cites starting paper"
+            
+            # Check if they share references
+            start_refs = set(start_paper.references.values_list('target_paper_id', flat=True))
+            paper_refs = set(paper.references.values_list('target_paper_id', flat=True))
+            
+            if start_refs.intersection(paper_refs):
+                return "Shares references with starting paper"
+            
+            return "Related paper"
+            
+        except Exception as e:
+            print(f"Error getting paper relationship: {e}")
+            return "Related paper"
     
     def _get_relevant_chunks_simple(self, question: str, paper: Paper) -> List[PaperChunk]:
         """Get relevant chunks using improved keyword matching."""

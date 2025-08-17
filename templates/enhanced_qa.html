@@ -1,0 +1,572 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Enhanced Q&A - Academic Reference Graph{% endblock %}
+
+{% block extra_css %}
+<style>
+    .qa-container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+    }
+    
+    .qa-header {
+        text-align: center;
+        margin-bottom: 30px;
+        padding: 20px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-radius: 10px;
+    }
+    
+    .qa-modes {
+        display: flex;
+        gap: 15px;
+        margin-bottom: 30px;
+        flex-wrap: wrap;
+    }
+    
+    .qa-mode {
+        flex: 1;
+        min-width: 200px;
+        padding: 20px;
+        border: 2px solid #e0e0e0;
+        border-radius: 10px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        text-align: center;
+    }
+    
+    .qa-mode:hover {
+        border-color: #667eea;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    
+    .qa-mode.active {
+        border-color: #667eea;
+        background-color: #f8f9ff;
+    }
+    
+    .qa-mode h3 {
+        margin: 0 0 10px 0;
+        color: #333;
+    }
+    
+    .qa-mode p {
+        margin: 0;
+        color: #666;
+        font-size: 14px;
+    }
+    
+    .chat-interface {
+        background: white;
+        border-radius: 10px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        overflow: hidden;
+    }
+    
+    .chat-header {
+        background: #f8f9fa;
+        padding: 15px 20px;
+        border-bottom: 1px solid #e0e0e0;
+    }
+    
+    .chat-messages {
+        height: 400px;
+        overflow-y: auto;
+        padding: 20px;
+    }
+    
+    .message {
+        margin-bottom: 15px;
+        display: flex;
+        align-items: flex-start;
+    }
+    
+    .message.user {
+        justify-content: flex-end;
+    }
+    
+    .message-content {
+        max-width: 70%;
+        padding: 12px 16px;
+        border-radius: 15px;
+        word-wrap: break-word;
+    }
+    
+    .message.user .message-content {
+        background: #667eea;
+        color: white;
+    }
+    
+    .message.assistant .message-content {
+        background: #f8f9fa;
+        color: #333;
+        border: 1px solid #e0e0e0;
+    }
+    
+    .message-input {
+        display: flex;
+        padding: 20px;
+        border-top: 1px solid #e0e0e0;
+        background: #f8f9fa;
+    }
+    
+    .message-input input {
+        flex: 1;
+        padding: 12px;
+        border: 1px solid #ddd;
+        border-radius: 25px;
+        margin-right: 10px;
+        font-size: 14px;
+    }
+    
+    .message-input button {
+        padding: 12px 24px;
+        background: #667eea;
+        color: white;
+        border: none;
+        border-radius: 25px;
+        cursor: pointer;
+        font-size: 14px;
+        transition: background 0.3s ease;
+    }
+    
+    .message-input button:hover {
+        background: #5a6fd8;
+    }
+    
+    .message-input button:disabled {
+        background: #ccc;
+        cursor: not-allowed;
+    }
+    
+    .paper-selector {
+        margin-bottom: 20px;
+        padding: 15px;
+        background: #f8f9fa;
+        border-radius: 8px;
+    }
+    
+    .paper-selector select {
+        width: 100%;
+        padding: 10px;
+        border: 1px solid #ddd;
+        border-radius: 5px;
+        font-size: 14px;
+    }
+    
+    .stats-panel {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 15px;
+        margin-bottom: 20px;
+    }
+    
+    .stat-card {
+        background: white;
+        padding: 15px;
+        border-radius: 8px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        text-align: center;
+    }
+    
+    .stat-number {
+        font-size: 24px;
+        font-weight: bold;
+        color: #667eea;
+    }
+    
+    .stat-label {
+        font-size: 12px;
+        color: #666;
+        margin-top: 5px;
+    }
+    
+    .sources-panel {
+        margin-top: 20px;
+        padding: 15px;
+        background: #f8f9fa;
+        border-radius: 8px;
+    }
+    
+    .source-item {
+        margin-bottom: 10px;
+        padding: 10px;
+        background: white;
+        border-radius: 5px;
+        border-left: 4px solid #667eea;
+    }
+    
+    .source-title {
+        font-weight: bold;
+        color: #333;
+        margin-bottom: 5px;
+    }
+    
+    .source-author {
+        font-size: 12px;
+        color: #666;
+    }
+    
+    .source-preview {
+        font-size: 13px;
+        color: #555;
+        margin-top: 5px;
+        font-style: italic;
+    }
+    
+    .loading {
+        text-align: center;
+        padding: 20px;
+        color: #666;
+    }
+    
+    .error {
+        color: #dc3545;
+        padding: 10px;
+        background: #f8d7da;
+        border-radius: 5px;
+        margin: 10px 0;
+    }
+    
+    .success {
+        color: #155724;
+        padding: 10px;
+        background: #d4edda;
+        border-radius: 5px;
+        margin: 10px 0;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="qa-container">
+    <div class="qa-header">
+        <h1>Enhanced Q&A System</h1>
+        <p>Ask questions across your entire academic paper collection with intelligent cross-paper analysis</p>
+    </div>
+    
+    <!-- System Statistics -->
+    <div class="stats-panel" id="systemStats">
+        <div class="stat-card">
+            <div class="stat-number" id="totalPapers">-</div>
+            <div class="stat-label">Total Papers</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number" id="totalReferences">-</div>
+            <div class="stat-label">References</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number" id="processingRate">-</div>
+            <div class="stat-label">Processing Rate</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number" id="totalConversations">-</div>
+            <div class="stat-label">Conversations</div>
+        </div>
+    </div>
+    
+    <!-- Q&A Modes -->
+    <div class="qa-modes">
+        <div class="qa-mode active" data-mode="cross-paper">
+            <h3>🔍 Cross-Paper Search</h3>
+            <p>Search across all papers in the system for comprehensive answers</p>
+        </div>
+        <div class="qa-mode" data-mode="single-paper">
+            <h3>📄 Single Paper</h3>
+            <p>Ask questions about a specific paper</p>
+        </div>
+        <div class="qa-mode" data-mode="network">
+            <h3>🌐 Reference Network</h3>
+            <p>Explore the reference network starting from a specific paper</p>
+        </div>
+    </div>
+    
+    <!-- Paper Selector (for single paper and network modes) -->
+    <div class="paper-selector" id="paperSelector" style="display: none;">
+        <label for="paperSelect">Select Paper:</label>
+        <select id="paperSelect">
+            <option value="">Loading papers...</option>
+        </select>
+    </div>
+    
+    <!-- Chat Interface -->
+    <div class="chat-interface">
+        <div class="chat-header">
+            <h3 id="chatTitle">Cross-Paper Q&A</h3>
+            <p id="chatDescription">Ask questions and get answers from across your entire paper collection</p>
+        </div>
+        
+        <div class="chat-messages" id="chatMessages">
+            <div class="message assistant">
+                <div class="message-content">
+                    Hello! I'm your enhanced Q&A assistant. I can help you find information across all your academic papers. 
+                    What would you like to know?
+                </div>
+            </div>
+        </div>
+        
+        <div class="message-input">
+            <input type="text" id="messageInput" placeholder="Ask a question..." />
+            <button id="sendButton" onclick="sendMessage()">Send</button>
+        </div>
+    </div>
+    
+    <!-- Sources Panel -->
+    <div class="sources-panel" id="sourcesPanel" style="display: none;">
+        <h4>Sources</h4>
+        <div id="sourcesList"></div>
+    </div>
+</div>
+
+<script>
+let currentMode = 'cross-paper';
+let currentPaperId = null;
+let papers = [];
+
+// Initialize the interface
+document.addEventListener('DOMContentLoaded', function() {
+    loadSystemStats();
+    loadPapers();
+    setupModeSwitching();
+});
+
+function setupModeSwitching() {
+    const modeButtons = document.querySelectorAll('.qa-mode');
+    modeButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            // Remove active class from all buttons
+            modeButtons.forEach(btn => btn.classList.remove('active'));
+            
+            // Add active class to clicked button
+            this.classList.add('active');
+            
+            // Update current mode
+            currentMode = this.dataset.mode;
+            
+            // Update interface
+            updateInterface();
+        });
+    });
+}
+
+function updateInterface() {
+    const chatTitle = document.getElementById('chatTitle');
+    const chatDescription = document.getElementById('chatDescription');
+    const paperSelector = document.getElementById('paperSelector');
+    
+    switch(currentMode) {
+        case 'cross-paper':
+            chatTitle.textContent = 'Cross-Paper Q&A';
+            chatDescription.textContent = 'Ask questions and get answers from across your entire paper collection';
+            paperSelector.style.display = 'none';
+            break;
+        case 'single-paper':
+            chatTitle.textContent = 'Single Paper Q&A';
+            chatDescription.textContent = 'Ask questions about a specific paper';
+            paperSelector.style.display = 'block';
+            break;
+        case 'network':
+            chatTitle.textContent = 'Reference Network Q&A';
+            chatDescription.textContent = 'Explore the reference network starting from a specific paper';
+            paperSelector.style.display = 'block';
+            break;
+    }
+}
+
+async function loadSystemStats() {
+    try {
+        const response = await fetch('/api/chatbot/system-stats/');
+        const data = await response.json();
+        
+        document.getElementById('totalPapers').textContent = data.total_papers;
+        document.getElementById('totalReferences').textContent = data.total_references;
+        document.getElementById('processingRate').textContent = data.processing_rate.toFixed(1) + '%';
+        document.getElementById('totalConversations').textContent = data.total_conversations;
+    } catch (error) {
+        console.error('Error loading system stats:', error);
+    }
+}
+
+async function loadPapers() {
+    try {
+        const response = await fetch('/api/papers/');
+        papers = await response.json();
+        
+        const select = document.getElementById('paperSelect');
+        select.innerHTML = '<option value="">Select a paper...</option>';
+        
+        papers.forEach(paper => {
+            const option = document.createElement('option');
+            option.value = paper.id;
+            option.textContent = `${paper.title} (${paper.author}, ${paper.year})`;
+            select.appendChild(option);
+        });
+        
+        // Add change listener
+        select.addEventListener('change', function() {
+            currentPaperId = this.value;
+        });
+        
+    } catch (error) {
+        console.error('Error loading papers:', error);
+    }
+}
+
+async function sendMessage() {
+    const input = document.getElementById('messageInput');
+    const message = input.value.trim();
+    
+    if (!message) return;
+    
+    // Add user message to chat
+    addMessage(message, 'user');
+    input.value = '';
+    
+    // Disable send button
+    const sendButton = document.getElementById('sendButton');
+    sendButton.disabled = true;
+    sendButton.textContent = 'Processing...';
+    
+    try {
+        let response;
+        
+        switch(currentMode) {
+            case 'cross-paper':
+                response = await fetch('/api/chatbot/cross-paper-chat/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCookie('csrftoken')
+                    },
+                    body: JSON.stringify({
+                        message: message,
+                        max_papers: 10
+                    })
+                });
+                break;
+                
+            case 'single-paper':
+                if (!currentPaperId) {
+                    addMessage('Please select a paper first.', 'assistant');
+                    return;
+                }
+                response = await fetch(`/api/chatbot/conversations/${currentPaperId}/chat/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCookie('csrftoken')
+                    },
+                    body: JSON.stringify({
+                        message: message,
+                        query_type: 'single_paper'
+                    })
+                });
+                break;
+                
+            case 'network':
+                if (!currentPaperId) {
+                    addMessage('Please select a paper first.', 'assistant');
+                    return;
+                }
+                response = await fetch(`/api/chatbot/network-chat/${currentPaperId}/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCookie('csrftoken')
+                    },
+                    body: JSON.stringify({
+                        message: message,
+                        max_depth: 2
+                    })
+                });
+                break;
+        }
+        
+        const data = await response.json();
+        
+        if (data.error) {
+            addMessage(`Error: ${data.error}`, 'assistant');
+        } else {
+            addMessage(data.message, 'assistant');
+            
+            // Show sources if available
+            if (data.sources && data.sources.length > 0) {
+                showSources(data.sources);
+            }
+        }
+        
+    } catch (error) {
+        console.error('Error sending message:', error);
+        addMessage('Sorry, I encountered an error while processing your question.', 'assistant');
+    } finally {
+        // Re-enable send button
+        sendButton.disabled = false;
+        sendButton.textContent = 'Send';
+    }
+}
+
+function addMessage(content, type) {
+    const messagesContainer = document.getElementById('chatMessages');
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message ${type}`;
+    
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'message-content';
+    contentDiv.textContent = content;
+    
+    messageDiv.appendChild(contentDiv);
+    messagesContainer.appendChild(messageDiv);
+    
+    // Scroll to bottom
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
+
+function showSources(sources) {
+    const sourcesPanel = document.getElementById('sourcesPanel');
+    const sourcesList = document.getElementById('sourcesList');
+    
+    sourcesList.innerHTML = '';
+    
+    sources.forEach(source => {
+        const sourceDiv = document.createElement('div');
+        sourceDiv.className = 'source-item';
+        
+        sourceDiv.innerHTML = `
+            <div class="source-title">${source.paper_title || 'Unknown Paper'}</div>
+            <div class="source-author">${source.paper_author || 'Unknown Author'}</div>
+            <div class="source-preview">${source.content_preview || 'No preview available'}</div>
+        `;
+        
+        sourcesList.appendChild(sourceDiv);
+    });
+    
+    sourcesPanel.style.display = 'block';
+}
+
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+// Allow Enter key to send message
+document.getElementById('messageInput').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+        sendMessage();
+    }
+});
+</script>
+{% endblock %}
