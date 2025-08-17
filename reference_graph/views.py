@@ -52,19 +52,38 @@ def upload_paper(request):
             uploaded_file = request.FILES.get('paper_file')
             title = request.POST.get('title', '')
             author = request.POST.get('author', '')
+            year = request.POST.get('year', '')
             
             if uploaded_file and title and author:
                 # Create paper instance
-                paper = Paper.objects.create(
-                    title=title,
-                    author=author,
-                    file=uploaded_file
-                )
+                paper_data = {
+                    'title': title,
+                    'author': author,
+                    'file': uploaded_file
+                }
                 
-                # Extract references synchronously
-                extract_references_from_paper(str(paper.id))
+                if year and year.isdigit():
+                    paper_data['year'] = int(year)
                 
-                messages.success(request, 'Paper uploaded successfully! Processing references...')
+                paper = Paper.objects.create(**paper_data)
+                
+                # Start recursive reference extraction in background
+                from papers.paper_downloader import recursive_extractor
+                import threading
+                
+                def process_paper_background():
+                    try:
+                        downloaded_papers = recursive_extractor.process_uploaded_paper(paper)
+                        print(f"Background processing completed. Downloaded {len(downloaded_papers)} papers.")
+                    except Exception as e:
+                        print(f"Error in background processing: {e}")
+                
+                # Start background thread
+                thread = threading.Thread(target=process_paper_background)
+                thread.daemon = True
+                thread.start()
+                
+                messages.success(request, 'Paper uploaded successfully! Downloading and processing references in the background...')
                 return redirect('paper_detail', paper_id=paper.id)
             else:
                 messages.error(request, 'Please provide all required fields.')

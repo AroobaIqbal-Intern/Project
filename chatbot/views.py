@@ -329,3 +329,76 @@ class RAGQueryView(generics.GenericAPIView):
                 {'error': f'Error processing query: {str(e)}'}, 
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
+@api_view(['POST'])
+def chat_with_paper(request, paper_id):
+    """Enhanced chat with a specific paper."""
+    try:
+        paper = get_object_or_404(Paper, id=paper_id)
+        data = request.data
+        message = data.get('message', '')
+        session_id = data.get('session_id', '')
+        
+        if not message:
+            return Response({'error': 'Message is required'}, status=400)
+        
+        # Check if paper has content
+        if not paper.content_text and not paper.file:
+            return Response({
+                'error': 'This paper has no content available. Please upload the paper file or try downloading it from online sources.'
+            }, status=400)
+        
+        # Initialize RAG engine
+        rag_engine = RAGEngine()
+        
+        # Get response from RAG
+        response, relevant_chunks, sources = rag_engine.query(message, paper)
+        
+        # Create or get conversation
+        conversation, created = Conversation.objects.get_or_create(
+            paper=paper,
+            session_id=session_id,
+            defaults={'user': request.user if request.user.is_authenticated else None}
+        )
+        
+        # Save user message
+        user_message = Message.objects.create(
+            conversation=conversation,
+            message_type='user',
+            content=message
+        )
+        
+        # Save assistant response
+        assistant_message = Message.objects.create(
+            conversation=conversation,
+            message_type='assistant',
+            content=response,
+            relevant_chunks=relevant_chunks,
+            sources=sources
+        )
+        
+        # Check if we should suggest downloading referenced papers
+        referenced_papers = []
+        if 'reference' in message.lower() or 'cite' in message.lower():
+            # Get papers that this paper references
+            for ref in paper.references.all():
+                if not ref.target_paper.file and not ref.target_paper.content_text:
+                    referenced_papers.append({
+                        'id': str(ref.target_paper.id),
+                        'title': ref.target_paper.title,
+                        'author': ref.target_paper.author
+                    })
+        
+        return Response({
+            'assistant_message': {
+                'content': response,
+                'relevant_chunks': relevant_chunks
+            },
+            'sources': sources,
+            'referenced_papers': referenced_papers[:3]  # Limit to 3 suggestions
+        })
+        
+    except Exception as e:
+        print(f"Error in chat_with_paper: {e}")
+        return Response({'error': str(e)}, status=500)

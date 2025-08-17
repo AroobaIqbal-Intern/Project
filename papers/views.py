@@ -75,8 +75,22 @@ class PaperUploadView(generics.CreateAPIView):
     
     def perform_create(self, serializer):
         paper = serializer.save()
-        # Extract references synchronously
-        extract_references_from_paper(str(paper.id))
+        
+        # Start recursive reference extraction in background
+        from .paper_downloader import recursive_extractor
+        import threading
+        
+        def process_paper_background():
+            try:
+                downloaded_papers = recursive_extractor.process_uploaded_paper(paper)
+                print(f"Background processing completed. Downloaded {len(downloaded_papers)} papers.")
+            except Exception as e:
+                print(f"Error in background processing: {e}")
+        
+        # Start background thread
+        thread = threading.Thread(target=process_paper_background)
+        thread.daemon = True
+        thread.start()
 
 
 class PaperSearchView(generics.ListAPIView):
@@ -180,4 +194,47 @@ def process_paper_references(request, pk):
         print(f"Error in process_paper_references: {e}")
         return Response({
             'error': f'Error processing references: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+def download_paper(request, pk):
+    """Manually trigger paper download."""
+    try:
+        print(f"Downloading paper: {pk}")
+        paper = get_object_or_404(Paper, pk=pk)
+        print(f"Found paper: {paper.title}")
+        
+        # Check if paper already has a file
+        if paper.file:
+            return Response({
+                'message': 'Paper already has a file',
+                'success': True
+            }, status=status.HTTP_200_OK)
+        
+        # Try to download the paper
+        from .paper_downloader import paper_downloader
+        success = paper_downloader.download_paper(paper)
+        
+        if success:
+            # Process the downloaded paper
+            from chatbot.rag_engine import RAGEngine
+            rag_engine = RAGEngine()
+            rag_engine.process_paper(paper)
+            
+            return Response({
+                'message': 'Paper downloaded and processed successfully',
+                'success': True
+            }, status=status.HTTP_200_OK)
+        else:
+            return Response({
+                'error': 'Could not download paper from online sources',
+                'success': False
+            }, status=status.HTTP_404_NOT_FOUND)
+            
+    except Exception as e:
+        print(f"Error in download_paper: {e}")
+        return Response({
+            'error': f'Error downloading paper: {str(e)}',
+            'success': False
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

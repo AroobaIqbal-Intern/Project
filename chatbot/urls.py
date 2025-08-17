@@ -14,4 +14,5 @@ urlpatterns = [
     path('papers/<uuid:paper_id>/chat/', views.PaperChatView.as_view(), name='paper-chat'),
     path('papers/<uuid:paper_id>/highlights/', views.PaperHighlightsView.as_view(), name='paper-highlights'),
     path('rag/query/', views.RAGQueryView.as_view(), name='rag-query'),
+    path('papers/<uuid:paper_id>/chat/', views.chat_with_paper, name='chat-with-paper'),
 ]

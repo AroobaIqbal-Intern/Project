@@ -13,6 +13,7 @@ urlpatterns = [
     path('papers/<uuid:pk>/cited-by/', views.PaperCitedByView.as_view(), name='paper-cited-by'),
     path('papers/<uuid:pk>/chunks/', views.PaperChunksView.as_view(), name='paper-chunks'),
     path('papers/<uuid:pk>/process-references/', views.process_paper_references, name='process-paper-references'),
+    path('papers/<uuid:pk>/download/', views.download_paper, name='download-paper'),
     path('upload/', views.PaperUploadView.as_view(), name='paper-upload'),
     path('search/', views.PaperSearchView.as_view(), name='paper-search'),
     path('graph-data/', views.GraphDataView.as_view(), name='graph-data'),
