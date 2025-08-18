@@ -294,3 +294,4 @@ For support and questions:
 ---
 
 **Built with ❤️ for the academic community**
+# ResearchPaperAnalyzer
