@@ -1,14 +1,19 @@
 """
 Utility functions for the papers app.
 """
+import os
 import re
 import json
+import time
+import urllib.parse
 import requests
 from typing import List, Dict, Optional
 from django.conf import settings
+from django.core.files.base import ContentFile
 from .models import Paper, Reference, PaperMetadata
 from chatbot.rag_engine import RAGEngine
 from django.db import models
+from bs4 import BeautifulSoup
 
 
 def extract_references_from_paper(paper_id: str) -> bool:
@@ -324,3 +329,178 @@ def search_papers_by_reference(query: str) -> List[Paper]:
     except Exception as e:
         print(f"Error searching papers by reference: {e}")
         return []
+
+
+# ----------------------------
+# Online fetching helpers
+# ----------------------------
+
+def ensure_paper_content_via_online_sources(paper_id: str) -> bool:
+    """If the paper has no content/file, try to fetch an online PDF and process it.
+
+    Returns True if content was obtained and processed; otherwise False.
+    """
+    try:
+        paper = Paper.objects.get(id=paper_id)
+    except Paper.DoesNotExist:
+        return False
+
+    # If content already exists, nothing to do
+    if paper.content_text or (paper.file and paper.file.name):
+        # If we have a file but not processed, process it
+        if not paper.processed:
+            rag = RAGEngine()
+            ok = rag.process_paper(paper)
+            if ok and paper.content_text:
+                # Extract references once content exists
+                extract_references_from_paper(str(paper.id))
+            return ok
+        return True
+
+    # Try to discover and download a PDF
+    downloaded = False
+    # Prefer DOI if available, otherwise try to discover via CrossRef by title/author
+    doi = (paper.doi or '').strip()
+    if not doi:
+        doi = _discover_doi_via_crossref(paper.title, paper.author, paper.year) or ''
+        if doi:
+            paper.doi = doi
+            paper.save(update_fields=['doi'])
+
+    if doi:
+        pdf_url = _find_pdf_from_doi(doi)
+        if pdf_url:
+            downloaded = _download_pdf_to_paper(paper, pdf_url)
+
+    # If still no file, try arXiv by title
+    if not downloaded:
+        arxiv_pdf = _find_arxiv_pdf_by_title(paper.title)
+        if arxiv_pdf:
+            downloaded = _download_pdf_to_paper(paper, arxiv_pdf)
+
+    if not downloaded:
+        return False
+
+    # Process the newly downloaded file
+    rag = RAGEngine()
+    ok = rag.process_paper(paper)
+    if ok and paper.content_text:
+        extract_references_from_paper(str(paper.id))
+    return ok
+
+
+def _discover_doi_via_crossref(title: str, author: Optional[str], year: Optional[int]) -> Optional[str]:
+    try:
+        url = "https://api.crossref.org/works"
+        query = title or ''
+        if author:
+            query += f" {author}"
+        params = {"query": query, "rows": 1}
+        if year:
+            params["filter"] = f"from-pub-date:{year}-01-01,until-pub-date:{year}-12-31"
+        r = requests.get(url, params=params, timeout=15)
+        if r.status_code == 200:
+            items = r.json().get('message', {}).get('items', [])
+            if items:
+                return items[0].get('DOI')
+        return None
+    except Exception:
+        return None
+
+
+def _find_pdf_from_doi(doi: str) -> Optional[str]:
+    # Try Unpaywall first if configured
+    email = os.getenv('UNPAYWALL_EMAIL') or getattr(settings, 'UNPAYWALL_EMAIL', None)
+    if email:
+        try:
+            url = f"https://api.unpaywall.org/v2/{urllib.parse.quote(doi)}"
+            r = requests.get(url, params={"email": email}, timeout=15)
+            if r.status_code == 200:
+                data = r.json()
+                best = data.get('best_oa_location') or {}
+                pdf_url = best.get('url_for_pdf') or best.get('url')
+                if pdf_url and pdf_url.lower().endswith('.pdf'):
+                    return pdf_url
+        except Exception:
+            pass
+
+    # Try CrossRef 'link' entries
+    try:
+        cr = requests.get(f"https://api.crossref.org/works/{urllib.parse.quote(doi)}", timeout=15)
+        if cr.status_code == 200:
+            item = cr.json().get('message', {})
+            for link in item.get('link', []) or []:
+                if link.get('content-type') == 'application/pdf' and link.get('URL'):
+                    return link['URL']
+    except Exception:
+        pass
+
+    # Fallback: scrape DOI landing page for a PDF link
+    try:
+        landing = requests.get(
+            f"https://doi.org/{urllib.parse.quote(doi)}",
+            timeout=15,
+            allow_redirects=True,
+            headers={"User-Agent": "Mozilla/5.0"}
+        )
+        if 200 <= landing.status_code < 400:
+            pdf = _extract_pdf_url_from_html(landing.text, landing.url)
+            if pdf:
+                return pdf
+    except Exception:
+        pass
+
+    return None
+
+
+def _extract_pdf_url_from_html(html: str, base_url: str) -> Optional[str]:
+    try:
+        soup = BeautifulSoup(html, 'html.parser')
+        # Common meta tag used by many publishers
+        meta = soup.find('meta', attrs={'name': 'citation_pdf_url'})
+        if meta and meta.get('content'):
+            return urllib.parse.urljoin(base_url, meta['content'])
+        # Direct links ending in .pdf
+        for a in soup.find_all('a', href=True):
+            href = a['href']
+            if href.lower().endswith('.pdf'):
+                return urllib.parse.urljoin(base_url, href)
+        return None
+    except Exception:
+        return None
+
+
+def _find_arxiv_pdf_by_title(title: Optional[str]) -> Optional[str]:
+    if not title:
+        return None
+    try:
+        q = title.strip()
+        url = "http://export.arxiv.org/api/query"
+        r = requests.get(url, params={"search_query": f"ti:{q}", "max_results": 1}, timeout=15)
+        if r.status_code == 200 and '<entry>' in r.text:
+            # Extract id url and convert to pdf url
+            id_match = re.search(r'<id>(.*?)</id>', r.text)
+            if id_match:
+                abs_url = id_match.group(1)
+                if 'arxiv.org/abs/' in abs_url:
+                    return abs_url.replace('/abs/', '/pdf/') + '.pdf'
+        return None
+    except Exception:
+        return None
+
+
+def _download_pdf_to_paper(paper: Paper, pdf_url: str) -> bool:
+    try:
+        r = requests.get(pdf_url, timeout=30, stream=True, headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code != 200:
+            return False
+        content_type = r.headers.get('Content-Type', '')
+        if 'pdf' not in content_type and not pdf_url.lower().endswith('.pdf'):
+            return False
+        content = r.content
+        safe_title = re.sub(r'[^a-zA-Z0-9_-]+', '_', (paper.title or 'paper'))[:50]
+        filename = f"{safe_title}_{int(time.time())}.pdf"
+        paper.file.save(filename, ContentFile(content), save=True)
+        return True
+    except Exception:
+        return False

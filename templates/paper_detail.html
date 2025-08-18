@@ -554,125 +554,142 @@ function addChatbotMessage(content, type) {
 
 function highlightRelevantContent(chunks) {
     console.log('Relevant chunks:', chunks);
-    
     if (!chunks || chunks.length === 0) return;
-    
-    // Get the paper content element
+
     const paperContent = document.getElementById('paperContent');
     if (!paperContent) {
         console.error('Paper content element not found');
         return;
     }
-    
-    // Clear existing highlights
-    const existingHighlights = paperContent.querySelectorAll('.highlight');
-    existingHighlights.forEach(h => {
-        const parent = h.parentNode;
-        if (parent) {
-            parent.replaceChild(document.createTextNode(h.textContent), h);
-            parent.normalize(); // Merge adjacent text nodes
-        }
-    });
-    
-    // Get the text content for searching
-    const originalText = paperContent.textContent || paperContent.innerText;
-    let highlightedText = originalText;
-    let highlightCount = 0;
-    
-    console.log('Original text length:', originalText.length);
-    
-    // Add new highlights
+
+    // Clear existing highlights (unwrap spans)
+    clearExistingHighlights(paperContent);
+
+    // Collect phrases from chunks
+    let totalHighlights = 0;
     chunks.forEach((chunk, index) => {
         let phrases = [];
-        
-        // Handle different data structures
         if (chunk.phrases && Array.isArray(chunk.phrases)) {
-            // New format with pre-extracted phrases
             phrases = chunk.phrases;
         } else if (chunk.content) {
-            // Old format - extract phrases from content
             phrases = extractKeyPhrases(chunk.content);
         }
-        
-        console.log(`Chunk ${index} phrases:`, phrases);
-        
-        phrases.forEach(phrase => {
-            if (phrase.length > 20) { // Only highlight meaningful phrases
-                // Try exact match first
-                if (highlightedText.includes(phrase)) {
-                    console.log('Exact match found:', phrase);
-                    const highlightSpan = createHighlightSpan(phrase, chunk, index);
-                    const regex = new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
-                    highlightedText = highlightedText.replace(regex, highlightSpan);
-                    highlightCount++;
-                } else {
-                    // Try fuzzy matching for better results
-                    const fuzzyMatch = findFuzzyMatch(phrase, highlightedText);
-                    if (fuzzyMatch) {
-                        console.log('Fuzzy match found:', fuzzyMatch, 'for phrase:', phrase);
-                        const highlightSpan = createHighlightSpan(fuzzyMatch, chunk, index);
-                        const regex = new RegExp(fuzzyMatch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
-                        highlightedText = highlightedText.replace(regex, highlightSpan);
-                        highlightCount++;
-                    } else {
-                        // Try to find the most similar text segment
-                        const similarMatch = findSimilarText(phrase, highlightedText);
-                        if (similarMatch) {
-                            console.log('Similar match found:', similarMatch, 'for phrase:', phrase);
-                            const highlightSpan = createHighlightSpan(similarMatch, chunk, index);
-                            const regex = new RegExp(similarMatch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
-                            highlightedText = highlightedText.replace(regex, highlightSpan);
-                            highlightCount++;
-                        }
-                    }
-                }
-            }
+
+        // Prefer longer phrases first to avoid nested overlaps
+        phrases.sort((a, b) => b.length - a.length);
+
+        const color = '#FFD700';
+        for (const phrase of phrases) {
+            if (!phrase || phrase.length < 16) continue;
+            const count = highlightOccurrencesInDom(paperContent, phrase, color, index, chunk);
+            totalHighlights += count;
+            // Limit per chunk to avoid over-highlighting
+            if (totalHighlights > 50) break;
+        }
+    });
+
+    // Enhance highlight interactions
+    const highlights = paperContent.querySelectorAll('.highlight');
+    highlights.forEach(h => {
+        h.addEventListener('mouseenter', function() {
+            this.style.backgroundColor = '#FFA500';
+            this.style.transform = 'scale(1.05)';
+        });
+        h.addEventListener('mouseleave', function() {
+            this.style.backgroundColor = '#FFD700';
+            this.style.transform = 'scale(1)';
+        });
+        h.addEventListener('click', function() {
+            this.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            this.style.backgroundColor = '#FF6B6B';
+            setTimeout(() => { this.style.backgroundColor = '#FFD700'; }, 1000);
         });
     });
-    
-    // Update the content with highlights
-    if (highlightedText !== originalText) {
-        paperContent.innerHTML = highlightedText;
-        
-        // Add hover effects to highlights
-        const highlights = paperContent.querySelectorAll('.highlight');
-        highlights.forEach(highlight => {
-            highlight.addEventListener('mouseenter', function() {
-                this.style.backgroundColor = '#FFA500';
-                this.style.transform = 'scale(1.05)';
-            });
-            
-            highlight.addEventListener('mouseleave', function() {
-                this.style.backgroundColor = '#FFD700';
-                this.style.transform = 'scale(1)';
-            });
-            
-            // Add click to scroll into view
-            highlight.addEventListener('click', function() {
-                this.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                this.style.backgroundColor = '#FF6B6B';
-                setTimeout(() => {
-                    this.style.backgroundColor = '#FFD700';
-                }, 1000);
-            });
-        });
-        
-        // Scroll to first highlight if any found
-        if (highlights.length > 0) {
-            setTimeout(() => {
-                highlights[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }, 500);
-        }
-        
-        // Show clear highlights button
+
+    if (highlights.length > 0) {
+        setTimeout(() => {
+            highlights[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 300);
         document.getElementById('clearHighlightsBtn').style.display = 'inline-block';
-        
-        // Show notification
-        showHighlightNotification(highlightCount);
+        showHighlightNotification(highlights.length);
     } else {
-        console.log('No matching content found for highlighting');
         showHighlightNotification(0);
     }
+}
+
+function clearExistingHighlights(root) {
+    const existing = root.querySelectorAll('.highlight');
+    existing.forEach(span => {
+        const parent = span.parentNode;
+        if (!parent) return;
+        parent.replaceChild(document.createTextNode(span.textContent), span);
+        parent.normalize();
+    });
+}
+
+function highlightOccurrencesInDom(root, phrase, color, index, chunk) {
+    // Case-insensitive search across text nodes using TreeWalker
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+        acceptNode: function(node) {
+            if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+            // Skip inside script/style tags
+            const parentTag = node.parentNode && node.parentNode.nodeName;
+            if (parentTag === 'SCRIPT' || parentTag === 'STYLE') return NodeFilter.FILTER_REJECT;
+            return NodeFilter.FILTER_ACCEPT;
+        }
+    });
+
+    let count = 0;
+    const lowerPhrase = phrase.toLowerCase();
+    const maxPerPhrase = 2; // avoid too many matches per phrase
+
+    const nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+
+    for (const textNode of nodes) {
+        const text = textNode.nodeValue;
+        const lower = text.toLowerCase();
+        let start = 0;
+        while (start < lower.length) {
+            const idx = lower.indexOf(lowerPhrase, start);
+            if (idx === -1) break;
+
+            // Wrap the exact substring in a span
+            const before = textNode.nodeValue.slice(0, idx);
+            const match = textNode.nodeValue.slice(idx, idx + phrase.length);
+            const after = textNode.nodeValue.slice(idx + phrase.length);
+
+            const span = document.createElement('span');
+            span.className = 'highlight';
+            span.style.backgroundColor = color;
+            span.style.padding = '2px 4px';
+            span.style.borderRadius = '3px';
+            span.style.margin = '0 2px';
+            span.style.fontWeight = 'bold';
+            span.textContent = match;
+            span.setAttribute('data-chunk', chunk.chunk_id || chunk.id || index);
+
+            const parent = textNode.parentNode;
+            if (!parent) break;
+
+            const frag = document.createDocumentFragment();
+            if (before) frag.appendChild(document.createTextNode(before));
+            frag.appendChild(span);
+            if (after) frag.appendChild(document.createTextNode(after));
+            parent.replaceChild(frag, textNode);
+
+            count += 1;
+            if (count >= maxPerPhrase) return count;
+
+            // Continue searching in the remaining tail (after)
+            // Need a new text node reference (the last node is the tail)
+            const newTail = parent.childNodes[parent.childNodes.length - 1];
+            if (!newTail || newTail.nodeType !== Node.TEXT_NODE) break;
+            textNode = newTail; // re-bind local reference to continue in tail
+            start = 0;
+        }
+    }
+    return count;
 }
 
 function extractKeyPhrases(text) {

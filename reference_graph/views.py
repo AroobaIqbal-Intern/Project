@@ -6,7 +6,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib import messages
 from papers.models import Paper
-from papers.utils import extract_references_from_paper
+from papers.utils import extract_references_from_paper, ensure_paper_content_via_online_sources
 import json
 
 
@@ -32,6 +32,13 @@ def reference_graph(request):
 def paper_detail(request, paper_id):
     """Paper detail view with zoom functionality and chatbot."""
     paper = get_object_or_404(Paper, id=paper_id)
+    # If no content, try to fetch from online sources and process
+    if not paper.content_text and not (paper.file and paper.file.name):
+        try:
+            ensure_paper_content_via_online_sources(str(paper.id))
+            paper.refresh_from_db()
+        except Exception:
+            pass
     references = paper.references.all()
     cited_by = paper.cited_by.all()
     
