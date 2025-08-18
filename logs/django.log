@@ -1305,3 +1305,51 @@ Bad Request: /api/papers/8d472e5b-9b9e-4cda-b678-e1d80db79496/process-references
 Bad Request: /api/papers/8d472e5b-9b9e-4cda-b678-e1d80db79496/process-references/
 Not Found: /api/papers/statistics/
 Not Found: /api/papers/statistics/
+Watching for file changes with StatReloader
+Not Found: /api/papers/statistics/
+Watching for file changes with StatReloader
+Not Found: /api/papers/statistics/
+Watching for file changes with StatReloader
+Not Found: /api/papers/statistics/
+Watching for file changes with StatReloader
+Not Found: /api/papers/statistics/
+/Users/dev/Documents/Project/papers/utils.py changed, reloading.
+Watching for file changes with StatReloader
+/Users/dev/Documents/Project/papers/views.py changed, reloading.
+Watching for file changes with StatReloader
+/Users/dev/Documents/Project/reference_graph/settings.py changed, reloading.
+Watching for file changes with StatReloader
+/Users/dev/Documents/Project/papers/utils.py changed, reloading.
+Watching for file changes with StatReloader
+/Users/dev/Documents/Project/reference_graph/views.py changed, reloading.
+Watching for file changes with StatReloader
+/Users/dev/Documents/Project/reference_graph/settings.py changed, reloading.
+Watching for file changes with StatReloader
+Not Found: /api/papers/statistics/
+Not Found: /api/papers/statistics/
+/Users/dev/Documents/Project/papers/views.py changed, reloading.
+Watching for file changes with StatReloader
+/Users/dev/Documents/Project/reference_graph/views.py changed, reloading.
+Watching for file changes with StatReloader
+/Users/dev/Documents/Project/reference_graph/views.py changed, reloading.
+Watching for file changes with StatReloader
+/Users/dev/Documents/Project/reference_graph/views.py changed, reloading.
+Watching for file changes with StatReloader
+Not Found: /api/papers/statistics/
+Bad Request: /api/papers/da352158-b761-4260-a626-da34ad060488/process-references/
+Bad Request: /api/papers/da352158-b761-4260-a626-da34ad060488/process-references/
+Not Found: /api/papers/search/
+Not Found: /api/papers/search/
+Not Found: /api/papers/search/
+Not Found: /api/papers/search/
+Not Found: /api/papers/statistics/
+Not Found: /api/papers/statistics/
+Bad Request: /api/papers/7d1ee1e5-26cc-4951-ac4e-482dfe4c9772/process-references/
+Not Found: /api/papers/statistics/
+/Users/dev/Documents/Project/papers/utils.py changed, reloading.
+Watching for file changes with StatReloader
+/Users/dev/Documents/Project/reference_graph/views.py changed, reloading.
+Watching for file changes with StatReloader
+Not Found: /api/papers/statistics/
+Watching for file changes with StatReloader
+Not Found: /api/papers/statistics/

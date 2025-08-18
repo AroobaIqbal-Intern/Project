@@ -75,7 +75,7 @@ class PaperUploadView(generics.CreateAPIView):
     
     def perform_create(self, serializer):
         paper = serializer.save()
-        # Extract references synchronously
+        # Extract references synchronously (no recursion on upload)
         extract_references_from_paper(str(paper.id))
 
 
@@ -161,9 +161,9 @@ def process_paper_references(request, pk):
                 'error': 'Paper has no content or file to process'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Extract references
+        # Extract references (no recursion here)
         success = extract_references_from_paper(str(paper.id))
-        
+
         if success:
             # Refresh paper to get updated reference count
             paper.refresh_from_db()

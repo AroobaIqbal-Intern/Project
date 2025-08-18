@@ -161,3 +161,6 @@ LOGGING = {
         'level': 'INFO',
     },
 }
+
+# Unpaywall configuration (optional, improves PDF discovery)
+UNPAYWALL_EMAIL = os.getenv('UNPAYWALL_EMAIL')
